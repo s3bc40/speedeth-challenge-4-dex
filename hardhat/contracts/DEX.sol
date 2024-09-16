@@ -19,6 +19,9 @@ contract DEX {
 	/* ============= ERRORS ============= */
 	error HasAlreadyLiquidity();
 	error SentTokenFailure();
+	error SentETHFailure();
+	error NotEnoughETHSent();
+	error NotEnoughBALSent();
 
 	/* ========== EVENTS ========== */
 
@@ -131,14 +134,53 @@ contract DEX {
 	/**
 	 * @notice sends Ether to DEX in exchange for $BAL
 	 */
-	function ethToToken() public payable returns (uint256 tokenOutput) {}
+	function ethToToken() public payable returns (uint256 tokenOutput) {
+		// Check if minimum value of ETH sent
+		if (msg.value == 0) {
+			revert NotEnoughETHSent();
+		}
+		// Init variable for price function 
+		uint256 xReserveETH = address(this).balance - msg.value;
+		uint256 yReserveBAL = token.balanceOf(address(this));
+		// Get token output from price converter
+		uint256 outputBAL = price(msg.value, xReserveETH, yReserveBAL);
+		// Send token to the sender
+		bool tokenSent = token.transfer(msg.sender, outputBAL);
+		if (!tokenSent) {
+			revert SentTokenFailure();
+		}
+		emit EthToTokenSwap(msg.sender, outputBAL, msg.value);
+		return outputBAL;
+	}
 
 	/**
 	 * @notice sends $BAL tokens to DEX in exchange for Ether
 	 */
 	function tokenToEth(
 		uint256 tokenInput
-	) public returns (uint256 ethOutput) {}
+	) public returns (uint256 ethOutput) {
+		// Check if minimum value of BAL sent
+		if (tokenInput == 0) {
+			revert NotEnoughBALSent();
+		}
+		// Init variable for price function 
+		uint256 xReserveBAL = token.balanceOf(address(this));
+		uint256 yReserveETH = address(this).balance;
+		// Get ETH output from price converter
+		uint256 outputETH = price(tokenInput, xReserveBAL, yReserveETH);
+		// Send token to DEX
+		bool tokenSent = token.transferFrom(msg.sender, address(this), tokenInput);
+		if (!tokenSent) {
+			revert SentTokenFailure();
+		}
+		// Send back eth to the sender
+		(bool sentETH,) = payable(msg.sender).call{ value: outputETH }("");
+		if (!sentETH) {
+			revert SentETHFailure();
+		}
+		emit TokenToEthSwap(msg.sender, tokenInput, outputETH);
+		return outputETH;
+	}
 
 	/**
 	 * @notice allows deposits of $BAL and $ETH to liquidity pool
