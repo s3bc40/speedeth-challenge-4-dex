@@ -22,6 +22,7 @@ contract DEX {
 	error SentETHFailure();
 	error NotEnoughETHSent();
 	error NotEnoughBALSent();
+	error NotEnoughLiquidity();
 
 	/* ========== EVENTS ========== */
 
@@ -188,7 +189,32 @@ contract DEX {
 	 * NOTE: user has to make sure to give DEX approval to spend their tokens on their behalf by calling approve function prior to this function call.
 	 * NOTE: Equal parts of both assets will be removed from the user's wallet with respect to the price outlined by the AMM.
 	 */
-	function deposit() public payable returns (uint256 tokensDeposited) {}
+	function deposit() public payable returns (uint256 tokensDeposited) {
+		// Check if minimum value of ETH sent
+		if (msg.value == 0) {
+			revert NotEnoughETHSent();
+		}
+		// Init reserve variable
+		uint256 ethReserve = address(this).balance - msg.value;
+		uint256 balReserve = token.balanceOf(address(this));
+		// Get token deposited
+		// NOTE : (eth * bal) / eth => bal (maybe the logic)
+		uint256 tokenDeposit = ((msg.value * balReserve) / ethReserve) + 1; // To avoid negative numbers ?
+		// Get the liquidity minted from the deposit
+		// NOTE : (eth * eth) / eth => eth
+		uint256 liquidityMinted = (msg.value * totalLiquidity) / ethReserve;
+		// Update global variable for liquidity
+		liquidity[msg.sender] += liquidityMinted;
+		totalLiquidity += liquidityMinted;
+		// Send token and check if amount is approved
+		bool tokenSent = token.transferFrom(msg.sender, address(this), tokenDeposit);
+		if (!tokenSent) {
+			revert SentTokenFailure();
+		}
+		// Emit and return
+		emit LiquidityProvided(msg.sender, liquidityMinted, msg.value, tokenDeposit);
+		return tokenDeposit;
+	}
 
 	/**
 	 * @notice allows withdrawal of $BAL and $ETH from liquidity pool
@@ -196,5 +222,32 @@ contract DEX {
 	 */
 	function withdraw(
 		uint256 amount
-	) public returns (uint256 ethAmount, uint256 tokenAmount) {}
+	) public returns (uint256 ethAmount, uint256 tokenAmount) {
+		if (amount > liquidity[msg.sender]) {
+			revert NotEnoughLiquidity();
+		}
+		// Init reserve variable
+		uint256 ethReserve = address(this).balance;
+		uint256 balReserve = token.balanceOf(address(this));
+		uint256 ethWithdrawn;
+		// Computed corresponding amounts
+		ethWithdrawn = (amount * ethReserve) / totalLiquidity;
+		tokenAmount = (amount * balReserve) / totalLiquidity;
+		// Apply withdraw effect on liquidity
+		liquidity[msg.sender] -= ethWithdrawn;
+		totalLiquidity -= ethWithdrawn;
+		// Pay back the user of eth
+		(bool ethSent,) = payable(msg.sender).call{ value: ethWithdrawn }("");
+		if (!ethSent) {
+			revert SentETHFailure();
+		}
+		// Send back token to the sender
+		bool tokenSent = token.transfer(msg.sender, tokenAmount);
+		if (!tokenSent) {
+			revert SentTokenFailure();
+		}
+		// Emit and returns
+		emit LiquidityRemoved(msg.sender, amount, tokenAmount, ethWithdrawn);
+		return (ethWithdrawn, tokenAmount);
+	}
 }

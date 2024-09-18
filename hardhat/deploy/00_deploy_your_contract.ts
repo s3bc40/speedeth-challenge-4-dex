@@ -50,7 +50,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const dex = (await hre.ethers.getContract("DEX", deployer)) as DEX;
 
   // paste in your front-end address here to get 10 balloons on deploy:
-  await balloons.transfer("0x815C72551613c8f170515bA914F4125faC85c7E4", "" + 10 * 10 ** 18);
+  await balloons.transfer("0x815C72551613c8f170515bA914F4125faC85c7E4", "" + 0.0000001 * 10 ** 18);
 
   // uncomment to init DEX on deploy:
 
@@ -59,8 +59,8 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   // If you are going to the testnet make sure your deployer account has enough ETH
   await balloons.approve(dexAddress, hre.ethers.parseEther("100"));
   console.log("INIT exchange...");
-  await dex.init(hre.ethers.parseEther("5"), {
-    value: hre.ethers.parseEther("5"),
+  await dex.init(hre.ethers.parseEther("0.0000001"), {
+    value: hre.ethers.parseEther("0.0000001"),
     gasLimit: 200000,
   });
 };
